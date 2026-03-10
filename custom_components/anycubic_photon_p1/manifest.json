@@ -4,10 +4,12 @@
   "codeowners": ["@modrzew"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://www.home-assistant.io/integrations/anycubic_photon_p1",
+  "documentation": "https://github.com/modrzew/hass-anycubic-photon-p1",
+  "issue_tracker": "https://github.com/modrzew/hass-anycubic-photon-p1/issues",
   "homekit": {},
   "iot_class": "local_push",
   "requirements": ["paho-mqtt==2.1.0", "pycryptodome==3.21.0"],
   "ssdp": [],
+  "version": "0.1.0",
   "zeroconf": []
 }
