@@ -1,0 +1,29 @@
+[project]
+name = "hass-anycubic-photon-p1"
+version = "0.1.0"
+description = "Home Assistant integration for Anycubic Photon P1 resin printers"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "ruff>=0.9",
+    "pre-commit>=3.6",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+extend-exclude = ["old-stuff"]
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort
+    "UP",    # pyupgrade
+    "B",     # flake8-bugbear
+    "SIM",   # flake8-simplify
+    "RUF",   # ruff-specific
+]

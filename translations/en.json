@@ -1,0 +1,67 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "data": {
+          "host": "Host"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "Device is already configured"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "printer_state": {
+        "name": "State",
+        "state": {
+          "online": "Online",
+          "offline": "Offline",
+          "idle": "Idle",
+          "busy": "Busy",
+          "printing": "Printing",
+          "paused": "Paused",
+          "stopping": "Stopping",
+          "complete": "Complete",
+          "monitoring": "Monitoring",
+          "error": "Error"
+        }
+      },
+      "print_progress": {
+        "name": "Print progress"
+      },
+      "current_layer": {
+        "name": "Current layer"
+      },
+      "total_layers": {
+        "name": "Total layers"
+      },
+      "time_remaining": {
+        "name": "Time remaining"
+      },
+      "print_time": {
+        "name": "Print time"
+      },
+      "current_file": {
+        "name": "Current file"
+      },
+      "resin_usage": {
+        "name": "Resin usage"
+      },
+      "model_height": {
+        "name": "Model height"
+      },
+      "layer_thickness": {
+        "name": "Layer thickness"
+      },
+      "resin_temperature": {
+        "name": "Resin temperature"
+      }
+    }
+  }
+}

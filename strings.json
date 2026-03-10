@@ -1,0 +1,67 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "data": {
+          "host": "[%key:common::config_flow::data::host%]"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
+      "unknown": "[%key:common::config_flow::error::unknown%]"
+    },
+    "abort": {
+      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "printer_state": {
+        "name": "State",
+        "state": {
+          "online": "Online",
+          "offline": "Offline",
+          "idle": "Idle",
+          "busy": "Busy",
+          "printing": "Printing",
+          "paused": "Paused",
+          "stopping": "Stopping",
+          "complete": "Complete",
+          "monitoring": "Monitoring",
+          "error": "Error"
+        }
+      },
+      "print_progress": {
+        "name": "Print progress"
+      },
+      "current_layer": {
+        "name": "Current layer"
+      },
+      "total_layers": {
+        "name": "Total layers"
+      },
+      "time_remaining": {
+        "name": "Time remaining"
+      },
+      "print_time": {
+        "name": "Print time"
+      },
+      "current_file": {
+        "name": "Current file"
+      },
+      "resin_usage": {
+        "name": "Resin usage"
+      },
+      "model_height": {
+        "name": "Model height"
+      },
+      "layer_thickness": {
+        "name": "Layer thickness"
+      },
+      "resin_temperature": {
+        "name": "Resin temperature"
+      }
+    }
+  }
+}
