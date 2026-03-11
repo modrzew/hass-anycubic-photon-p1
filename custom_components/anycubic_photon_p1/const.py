@@ -4,6 +4,7 @@ DOMAIN = "anycubic_photon_p1"
 
 HTTP_PORT = 18910
 MQTT_PORT = 8883
+VIDEO_PORT = 18088
 
 MQTT_TOPIC_SUBSCRIBE = (
     "anycubic/anycubicCloud/v1/printer/+/{model_id}/{device_id}/+/report"

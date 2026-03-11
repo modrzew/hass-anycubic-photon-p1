@@ -3,7 +3,7 @@
   "name": "Anycubic Photon P1",
   "codeowners": ["@modrzew"],
   "config_flow": true,
-  "dependencies": [],
+  "dependencies": ["ffmpeg"],
   "documentation": "https://github.com/modrzew/hass-anycubic-photon-p1",
   "issue_tracker": "https://github.com/modrzew/hass-anycubic-photon-p1/issues",
   "homekit": {},

@@ -6,6 +6,8 @@ import asyncio
 import json
 import logging
 import ssl
+import time
+import uuid
 from typing import Any
 
 import paho.mqtt.client as mqtt
@@ -20,6 +22,7 @@ from .const import (
     MQTT_TOPIC_SUBSCRIBE,
     SIGNAL_UPDATE,
     SUBTOPICS,
+    VIDEO_PORT,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,6 +52,11 @@ class AnycubicMqttCoordinator:
         self._reconnect_delay = MIN_RECONNECT_DELAY
         self._reconnect_task: asyncio.Task | None = None
         self._stopping = False
+
+    @property
+    def stream_url(self) -> str:
+        """Return the HTTP-FLV stream URL."""
+        return f"http://{self.printer_info.ip}:{VIDEO_PORT}/flv"
 
     def get_data(self, subtopic: str) -> dict[str, Any] | None:
         """Get the latest data for a subtopic."""
@@ -137,6 +145,24 @@ class AnycubicMqttCoordinator:
                 )
                 client.publish(pub_topic, "{}")
                 _LOGGER.debug("Published status request to %s", pub_topic)
+
+            # Start camera stream
+            video_topic = MQTT_TOPIC_PUBLISH.format(
+                model_id=userdata["model_id"],
+                device_id=userdata["device_id"],
+                subtopic="video",
+            )
+            start_capture_msg = json.dumps(
+                {
+                    "type": "video",
+                    "action": "startCapture",
+                    "timestamp": int(time.time() * 1000),
+                    "msgid": str(uuid.uuid4()),
+                    "data": None,
+                }
+            )
+            client.publish(video_topic, start_capture_msg)
+            _LOGGER.debug("Published startCapture to %s", video_topic)
             self._data["__combined__"] = {"state": "online"}
             self.available = True
             self._reconnect_delay = MIN_RECONNECT_DELAY

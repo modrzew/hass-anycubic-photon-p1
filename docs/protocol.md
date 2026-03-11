@@ -4,10 +4,11 @@ This document describes the local network protocol used by the Anycubic Photon P
 
 ## Overview
 
-The printer exposes two services on the local network:
+The printer exposes three services on the local network:
 
 - **HTTP server** on port **18910** - used for discovery, authentication handshake, and file uploads
 - **MQTT broker** on port **8883** (TLS) - used for real-time status updates and printer control
+- **HTTP-FLV video server** on port **18088** - serves the camera feed as an FLV stream (only active after `startCapture` is sent via MQTT)
 
 Connecting to the MQTT broker requires a multi-step handshake to obtain ephemeral credentials. The token from the HTTP handshake is used to derive AES encryption keys, making the credentials short-lived.
 
@@ -282,6 +283,96 @@ During print startup, the printer sends monitoring messages on the `print` subto
 
 Status values: `0` = passed, `-1` = skipped, `-2` = pending/not applicable.
 
+## Camera Stream (HTTP-FLV)
+
+The printer has a built-in camera that streams video as FLV over HTTP. The stream is not always available — it must be activated via an MQTT command and remains active only while the MQTT client stays connected.
+
+### Stream Properties
+
+| Property | Value |
+|---|---|
+| URL | `http://<printer_ip>:18088/flv` |
+| Container | FLV |
+| Codec | H.264 Constrained Baseline |
+| Resolution | 640x480 |
+| Frame rate | 10 fps |
+| Color space | YUV420P progressive |
+
+The server sets `Content-Length: 99999999999` (effectively infinite) and `Access-Control-Allow-Origin: *`.
+
+### Activation
+
+The stream must be activated by publishing a `startCapture` message to the `video` subtopic over MQTT:
+
+```
+Topic: anycubic/anycubicCloud/v1/pc/printer/{modelId}/{deviceId}/video
+```
+
+```json
+{
+  "type": "video",
+  "action": "startCapture",
+  "timestamp": 1773202214897,
+  "msgid": "eab01877-e3e2-494b-af65-1a21be1ab8b8",
+  "data": null
+}
+```
+
+The printer responds on `video/report`:
+
+```json
+{
+  "type": "video",
+  "action": "startCapture",
+  "msgid": "9cb8d24f-00d2-4d75-a10a-d9b89be79895",
+  "state": "initSuccess",
+  "timestamp": 1773202215403,
+  "code": 200,
+  "msg": "LanStream start success",
+  "data": null
+}
+```
+
+After this response, the FLV stream is available at `http://<printer_ip>:18088/flv`.
+
+### Lifecycle
+
+- The stream stays active as long as the MQTT client that sent `startCapture` remains connected.
+- When the MQTT client disconnects, the printer stops the stream and publishes `{"msg": "LanStream push ended"}` on the `video/report` topic.
+- `GET http://<printer_ip>:18088/` returns `ok` (can be used as a health check).
+- `GET http://<printer_ip>:18088/flv` returns `ok` (2 bytes) when the stream is not active, and the FLV byte stream when it is.
+- To stop the stream without disconnecting MQTT, publish `stopCapture`:
+
+```json
+{
+  "type": "video",
+  "action": "stopCapture",
+  "timestamp": 1773202300000,
+  "msgid": "some-uuid",
+  "data": null
+}
+```
+
+### Other Video Actions
+
+The `video` subtopic also supports timelapse management:
+
+| Action | Description |
+|---|---|
+| `listVideo` | List timelapse recordings on the printer |
+| `deleteVideo` | Delete a timelapse recording |
+
+### Cloud Mode (Agora RTC)
+
+When the printer is accessed through the Anycubic cloud (not LAN), it uses the Agora RTC SDK instead of HTTP-FLV. In that mode, the `startCapture` response includes Agora credentials in the `data` field (`appId`, `token`, `channel`, `userId`, `remoteId`, `encryptionKey`, `encryptionSalt`, `encryptionMode`). This is not relevant for LAN-only integrations.
+
+### Implementation Notes
+
+- The desktop app's `RtspDecoder` (despite the name) consumes the FLV stream using FFmpeg with flags: `flv_no_metadata`, `flv_ignore_chunks`, `nobuffer+igndts+discardcorrupt`.
+- The `startCapture` must be sent after every MQTT reconnect. The printer does not remember previous stream state.
+- The printer status data includes `camera_timelapse_support` (bool) and `cameraReady` (bool) fields that indicate camera capability.
+- The printer also listens on port **11311** (purpose unknown — accepts TCP connections but does not send data unprompted).
+
 ## Token Lifetime
 
 The `/info` token is ephemeral - it changes on every request. The MQTT credentials derived from it are also short-lived. On reconnection, the full handshake (GET /info -> POST /ctrl -> AES decrypt) must be repeated.
@@ -302,8 +393,28 @@ This is not currently used by the integration (IP is configured manually).
 
 ## HTTP Endpoints Summary
 
+### Port 18910 (API)
+
 | Endpoint | Method | Auth | Description |
 |---|---|---|---|
 | `/info` | GET | None | Printer info + ephemeral token |
 | `/ctrl` | POST | Signed query params | Encrypted MQTT credentials |
 | `/upload/` | POST | Unknown | File upload for print jobs |
+
+### Port 18088 (Video)
+
+| Endpoint | Method | Auth | Description |
+|---|---|---|---|
+| `/` | GET | None | Health check, returns `ok` |
+| `/flv` | GET | None | FLV camera stream (only active after MQTT `startCapture`) |
+
+## Cloud Infrastructure
+
+The desktop app connects to Anycubic's cloud services for remote access. The URLs are stored in `environment.ini` encoded as base64 + byte shift of 5. Decoded values:
+
+| Service | China | International |
+|---|---|---|
+| Cloud API | `https://cloud-platform.anycubicloud.com/p/p/workbench/api` | `https://cloud-universe.anycubic.com/p/p/workbench/api` |
+| Cloud MQTT | `mqtt.anycubic.com:8883` | `mqtt-universe-testnew.anycubic.com:8883` |
+
+These are not used by the LAN integration.

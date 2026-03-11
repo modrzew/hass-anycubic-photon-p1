@@ -16,7 +16,7 @@ from .coordinator import AnycubicMqttCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.CAMERA, Platform.SENSOR]
 
 type AnycubicPhotonP1ConfigEntry = ConfigEntry[AnycubicMqttCoordinator]
 
