@@ -10,6 +10,7 @@ from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
     SensorEntityDescription,
+    SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
@@ -64,7 +65,9 @@ SENSOR_DESCRIPTIONS: tuple[AnycubicSensorEntityDescription, ...] = (
         key="current_layer",
         translation_key="current_layer",
         subtopic="print",
-        value_fn=lambda d: d.get("curr_layer"),
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        value_fn=lambda d: int(d["curr_layer"]) if "curr_layer" in d else None,
     ),
     AnycubicSensorEntityDescription(
         key="total_layers",
