@@ -32,7 +32,7 @@ class AnycubicCamera(AnycubicEntity, Camera):
         """Initialize the camera."""
         AnycubicEntity.__init__(self, coordinator)
         Camera.__init__(self)
-        self._attr_unique_id = f"{coordinator.printer_info.device_id}_camera"
+        self._attr_unique_id = f"{self._stable_id}_camera"
 
     async def stream_source(self) -> str | None:
         """Return the stream source URL."""

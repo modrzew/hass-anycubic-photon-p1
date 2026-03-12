@@ -20,8 +20,9 @@ class AnycubicEntity(Entity):
         """Initialize the entity."""
         self.coordinator = coordinator
         info = coordinator.printer_info
+        self._stable_id = coordinator.entry.entry_id
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, info.device_id)},
+            identifiers={(DOMAIN, coordinator.entry.entry_id)},
             name=info.name,
             manufacturer="Anycubic",
             model=info.model,
