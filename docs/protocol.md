@@ -214,12 +214,11 @@ anycubic/anycubicCloud/v1/+/public/{modelId}/{deviceId}/#
 anycubic/anycubicCloud/v1/pc/printer/{modelId}/{deviceId}/{subtopic}
 ```
 
-The desktop app uses `slicer` instead of `pc` in its publish path:
+The desktop app uses `pc` for LAN connections (`ACLanClient`) and `slicer` for cloud connections (`libQMqttSDK`):
 ```
-anycubic/anycubicCloud/v1/slicer/printer/{modelId}/{deviceId}/{subtopic}
+LAN:   anycubic/anycubicCloud/v1/pc/printer/{modelId}/{deviceId}/{subtopic}
+Cloud: anycubic/anycubicCloud/v1/slicer/printer/{modelId}/{deviceId}/{subtopic}
 ```
-
-Both work — the printer matches on the topic structure, not the specific path component before `printer`.
 
 ## Message Format
 
@@ -253,32 +252,44 @@ The `state` field has different meanings depending on context:
 
 ## Requesting Current State
 
-Publishing `{}` (empty JSON object) to a subtopic triggers the printer to respond with its current state for that topic. This is a convenient shortcut.
+The desktop app (`ACLanClient`) sends exactly **two** queries on MQTT connect:
 
-For more targeted queries, publish a properly structured message with a specific query action:
+1. **Status query** — `{"type": "status", "action": "query", ..., "data": null}` to `.../status`
+2. **LAN info query** — `{"type": "lanInfo", "action": "query", ..., "data": null}` to `.../status`
+
+Note: the `lanInfo` query is published to the **`/status` topic**, not a `/lanInfo` topic. The `type` field in the JSON differs from the topic suffix.
+
+Additional queries are sent later by the app's UI layer (not on connect):
+
+| Topic Suffix | JSON `type` | `action` | `data` | Notes |
+|---|---|---|---|---|
+| `status` | `status` | `query` | `null` | Printer status |
+| `status` | `lanInfo` | `query` | `null` | LAN info (IP, firmware, etc.) |
+| `status` | `autoOperation` | `getStatus` | `null` | Auto-operation settings |
+| `print` | `print` | `query` | `null` | Current print job state |
+| `light` | `light` | `query` | `null` | Light status |
+| `peripherie` | `peripherie` | `query` | `null` | Peripheral status |
+| `releaseFilm` | `releaseFilm` | `get` | `null` | Release film count |
+| `properties` | `properties` | `read` | `["connect"]` | Printer component info |
+| `properties` | `properties` | `read` | `["signal_strength"]` | WiFi signal strength |
+
+In practice, this query burst is also the app's effective "Refresh" path for the LAN printer view. A live probe against printer `192.168.2.107` on March 15, 2026 confirmed that sending the full set returns the current snapshot immediately: `status`, `lanInfo`, `light`, `peripherie`, `releaseFilm`, `properties.connect`, `properties.signal_strength`, and `autoOperation.reportStatus` all arrived within about 300 ms. `print/query` returned no extra payload while the printer was idle.
+
+### Properties queries
+
+The `properties` subtopic uses a special format where `data` is a JSON **array** of property names to read:
 
 ```json
 {
-  "type": "print",
-  "action": "query",
+  "type": "properties",
+  "action": "read",
   "timestamp": 1773139043232,
   "msgid": "550e8400-e29b-41d4-a716-446655440000",
-  "data": null
+  "data": ["signal_strength"]
 }
 ```
 
-Key query actions per subtopic:
-
-| Subtopic | Query Action | Notes |
-|---|---|---|
-| `print` | `query` | Request current print job state |
-| `status` | (automatic) | Printer pushes `free`/`BUSY`/`workReport` on its own |
-| `network` | `queryInfo` | Request network information |
-| `peripherie` | `query` | Request peripheral status |
-| `info` | `report` | Request printer info |
-| `releaseFilm` | `get` | Request release film count |
-| `axis` | `query` | Request axis position |
-| `autoOperation` | `get` | Request auto-operation settings |
+Known property names: `"connect"`, `"signal_strength"`. The `publishPropertyRead(QStringList)` method in the app accepts arbitrary property names.
 
 ## MQTT Subtopics
 
@@ -612,7 +623,7 @@ The `start` action requires a `data` payload with the file information. The stru
 
 ### Light Control
 
-Published to `.../light`:
+Published to `.../light`. The `data` payload uses `PrinterLightData` with `type` (hardcoded to `3`) and `status` (0=off, 1=on):
 
 ```json
 {
@@ -621,8 +632,21 @@ Published to `.../light`:
   "timestamp": 1773139043232,
   "msgid": "550e8400-e29b-41d4-a716-446655440000",
   "data": {
-    "brightness": 50
+    "type": 3,
+    "status": 1
   }
+}
+```
+
+To query the current light state, publish with `action: "query"` (enum 2101):
+
+```json
+{
+  "type": "light",
+  "action": "query",
+  "timestamp": 1773139043232,
+  "msgid": "550e8400-e29b-41d4-a716-446655440000",
+  "data": null
 }
 ```
 

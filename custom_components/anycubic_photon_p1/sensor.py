@@ -20,6 +20,7 @@ from homeassistant.const import (
     UnitOfTime,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import AnycubicMqttCoordinator
@@ -128,6 +129,29 @@ SENSOR_DESCRIPTIONS: tuple[AnycubicSensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         suggested_display_precision=1,
         value_fn=lambda d: d.get("resin_temp"),
+    ),
+    AnycubicSensorEntityDescription(
+        key="wifi_signal_strength",
+        translation_key="wifi_signal_strength",
+        subtopic="properties",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda d: d.get("signal_strength"),
+    ),
+    AnycubicSensorEntityDescription(
+        key="release_film_count",
+        translation_key="release_film_count",
+        subtopic="releaseFilm",
+        state_class=SensorStateClass.TOTAL,
+        value_fn=lambda d: d.get("times"),
+    ),
+    AnycubicSensorEntityDescription(
+        key="release_film_layers",
+        translation_key="release_film_layers",
+        subtopic="releaseFilm",
+        state_class=SensorStateClass.TOTAL,
+        value_fn=lambda d: d.get("layers"),
     ),
 )
 

@@ -16,9 +16,40 @@
     }
   },
   "entity": {
+    "button": {
+      "refresh_state": {
+        "name": "Refresh state"
+      },
+      "pause_print": {
+        "name": "Pause print"
+      },
+      "resume_print": {
+        "name": "Resume print"
+      },
+      "stop_print": {
+        "name": "Stop print"
+      },
+      "cancel_exposure_test": {
+        "name": "Cancel exposure test"
+      },
+      "cancel_residual_cleaning": {
+        "name": "Cancel residual cleaning"
+      },
+      "reset_release_film_counter": {
+        "name": "Reset release film counter"
+      },
+      "turn_off_motors": {
+        "name": "Turn off motors"
+      }
+    },
     "camera": {
       "camera": {
         "name": "Camera"
+      }
+    },
+    "light": {
+      "light": {
+        "name": "Light"
       }
     },
     "sensor": {
@@ -66,6 +97,20 @@
       },
       "resin_temperature": {
         "name": "Resin temperature"
+      },
+      "wifi_signal_strength": {
+        "name": "WiFi signal strength"
+      },
+      "release_film_count": {
+        "name": "Release film count"
+      },
+      "release_film_layers": {
+        "name": "Release film layers"
+      }
+    },
+    "switch": {
+      "air_purifier": {
+        "name": "Air purifier"
       }
     }
   }

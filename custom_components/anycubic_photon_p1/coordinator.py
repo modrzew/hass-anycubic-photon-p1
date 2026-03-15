@@ -13,15 +13,17 @@ from typing import Any
 import paho.mqtt.client as mqtt
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .api import AnycubicApi, AnycubicApiError, PrinterInfo
 from .const import (
+    DOMAIN,
     MQTT_PORT,
     MQTT_TOPIC_PUBLISH,
     MQTT_TOPIC_SUBSCRIBE,
     SIGNAL_UPDATE,
-    SUBTOPICS,
+    STARTUP_QUERIES,
     VIDEO_PORT,
 )
 
@@ -52,6 +54,8 @@ class AnycubicMqttCoordinator:
         self._reconnect_delay = MIN_RECONNECT_DELAY
         self._reconnect_task: asyncio.Task | None = None
         self._stopping = False
+        self._model_id: str = ""
+        self._device_id: str = ""
 
     @property
     def stream_url(self) -> str:
@@ -104,6 +108,7 @@ class AnycubicMqttCoordinator:
             client.tls_set_context(ctx)
 
             client.on_connect = self._on_connect
+            client.on_subscribe = self._on_subscribe
             client.on_message = self._on_message
             client.on_disconnect = self._on_disconnect
 
@@ -124,6 +129,63 @@ class AnycubicMqttCoordinator:
             _LOGGER.error("Failed to connect MQTT: %s", err)
             self._schedule_reconnect()
 
+    def _build_command(self, msg_type: str, action: str, data: Any = None) -> str:
+        """Build a JSON command message.
+
+        The app always includes "data" (null when no payload is needed).
+        ``msg_type`` is the JSON "type" field (may differ from topic suffix).
+        """
+        return json.dumps(
+            {
+                "type": msg_type,
+                "action": action,
+                "timestamp": int(time.time() * 1000),
+                "msgid": str(uuid.uuid4()),
+                "data": data,
+            }
+        )
+
+    def publish_command(
+        self,
+        subtopic: str,
+        action: str,
+        data: Any = None,
+        *,
+        msg_type: str | None = None,
+    ) -> None:
+        """Publish a command to the printer.
+
+        ``subtopic`` determines the MQTT topic suffix.
+        ``msg_type`` is the JSON "type" field; defaults to ``subtopic``.
+        Safe to call from any thread (paho publish is thread-safe).
+        """
+        if self._client is None or not self._model_id:
+            _LOGGER.warning("Cannot publish: MQTT not connected")
+            return
+        topic = MQTT_TOPIC_PUBLISH.format(
+            model_id=self._model_id,
+            device_id=self._device_id,
+            subtopic=subtopic,
+        )
+        msg = self._build_command(msg_type or subtopic, action, data)
+        self._client.publish(topic, msg)
+        _LOGGER.debug("Published %s/%s to %s", msg_type or subtopic, action, topic)
+
+    def request_refresh(self) -> None:
+        """Request a full state refresh from the printer."""
+        if self._client is None or not self._model_id:
+            _LOGGER.warning("Cannot refresh: MQTT not connected")
+            return
+
+        for topic_suffix, msg_type, action, data in STARTUP_QUERIES:
+            self.publish_command(
+                topic_suffix,
+                action,
+                data,
+                msg_type=msg_type,
+            )
+        _LOGGER.debug("Published %d refresh queries", len(STARTUP_QUERIES))
+
     def _on_connect(
         self,
         client: mqtt.Client,
@@ -135,34 +197,12 @@ class AnycubicMqttCoordinator:
         """Handle MQTT connection."""
         if rc.is_failure is False:
             _LOGGER.debug("MQTT connected to %s", self.printer_info.ip)
+            self._model_id = userdata["model_id"]
+            self._device_id = userdata["device_id"]
+            # Subscribe and wait for SUBACK before publishing queries.
+            # The on_subscribe callback will fire the startup queries.
             client.subscribe(userdata["topic"])
-            # Request current state from all subtopics
-            for subtopic in SUBTOPICS:
-                pub_topic = MQTT_TOPIC_PUBLISH.format(
-                    model_id=userdata["model_id"],
-                    device_id=userdata["device_id"],
-                    subtopic=subtopic,
-                )
-                client.publish(pub_topic, "{}")
-                _LOGGER.debug("Published status request to %s", pub_topic)
 
-            # Start camera stream
-            video_topic = MQTT_TOPIC_PUBLISH.format(
-                model_id=userdata["model_id"],
-                device_id=userdata["device_id"],
-                subtopic="video",
-            )
-            start_capture_msg = json.dumps(
-                {
-                    "type": "video",
-                    "action": "startCapture",
-                    "timestamp": int(time.time() * 1000),
-                    "msgid": str(uuid.uuid4()),
-                    "data": None,
-                }
-            )
-            client.publish(video_topic, start_capture_msg)
-            _LOGGER.debug("Published startCapture to %s", video_topic)
             self._data["__combined__"] = {"state": "online"}
             self.available = True
             self._reconnect_delay = MIN_RECONNECT_DELAY
@@ -174,6 +214,39 @@ class AnycubicMqttCoordinator:
         else:
             _LOGGER.error("MQTT connect failed: %s", rc)
 
+    def _on_subscribe(
+        self,
+        client: mqtt.Client,
+        userdata: dict,
+        mid: int,
+        reason_code_list: list[mqtt.ReasonCode],
+        properties: mqtt.Properties | None = None,
+    ) -> None:
+        """Handle MQTT subscription confirmed — now safe to query state."""
+        for rc in reason_code_list:
+            if rc.is_failure:
+                _LOGGER.error("MQTT subscription rejected: %s", rc)
+                return
+        _LOGGER.debug(
+            "MQTT subscription confirmed (rc=%s), querying printer state",
+            reason_code_list,
+        )
+
+        # Request current state using the same query burst as the app's refresh path.
+        self.request_refresh()
+
+        # Start camera stream
+        video_topic = MQTT_TOPIC_PUBLISH.format(
+            model_id=self._model_id,
+            device_id=self._device_id,
+            subtopic="video",
+        )
+        client.publish(
+            video_topic,
+            self._build_command("video", "startCapture"),
+        )
+        _LOGGER.debug("Published startCapture")
+
     def _on_message(
         self,
         client: mqtt.Client,
@@ -182,10 +255,13 @@ class AnycubicMqttCoordinator:
     ) -> None:
         """Handle incoming MQTT message."""
         try:
-            parts = msg.topic.split("/")
-            # .../printer/public/{modelId}/{deviceId}/{subtopic}/report
-            subtopic = parts[7] if len(parts) > 7 else "unknown"
             payload = json.loads(msg.payload)
+            # Prefer the "type" field in the payload for subtopic name;
+            # fall back to extracting from the topic path.
+            subtopic = payload.get("type")
+            if not subtopic:
+                parts = msg.topic.split("/")
+                subtopic = parts[7] if len(parts) > 7 else "unknown"
             _LOGGER.debug("MQTT %s: %s", subtopic, payload)
 
             # Merge into existing data for this subtopic so that
@@ -197,21 +273,23 @@ class AnycubicMqttCoordinator:
             # Capture top-level state (e.g. "busy", "printing")
             if "state" in payload:
                 stored["state"] = payload["state"]
-                # Only update combined state with known printer states
-                _PRINTER_STATES = {
-                    "idle",
-                    "busy",
-                    "printing",
-                    "paused",
-                    "stopping",
-                    "complete",
-                    "monitoring",
-                    "error",
+                # Map firmware state names to our enum values
+                _STATE_MAP = {
+                    "free": "idle",
+                    "idle": "idle",
+                    "busy": "busy",
+                    "printing": "printing",
+                    "paused": "paused",
+                    "stopping": "stopping",
+                    "complete": "complete",
+                    "monitoring": "monitoring",
+                    "error": "error",
                 }
-                if payload["state"] in _PRINTER_STATES:
+                mapped = _STATE_MAP.get(payload["state"])
+                if mapped:
                     if "__combined__" not in self._data:
                         self._data["__combined__"] = {}
-                    self._data["__combined__"]["state"] = payload["state"]
+                    self._data["__combined__"]["state"] = mapped
             if "action" in payload:
                 stored["action"] = payload["action"]
 
@@ -220,6 +298,12 @@ class AnycubicMqttCoordinator:
             data = payload.get("data")
             if isinstance(data, dict):
                 stored.update(data)
+
+                # Update device sw_version from lanInfo response
+                if subtopic == "lanInfo" and "version" in data:
+                    self.hass.loop.call_soon_threadsafe(
+                        self._update_sw_version, data["version"]
+                    )
         except (json.JSONDecodeError, IndexError) as err:
             _LOGGER.warning("Failed to parse MQTT message: %s", err)
             return
@@ -229,6 +313,15 @@ class AnycubicMqttCoordinator:
             self.hass,
             SIGNAL_UPDATE.format(entry_id=self.entry.entry_id),
         )
+
+    def _update_sw_version(self, version: str) -> None:
+        """Update device registry with firmware version from lanInfo."""
+        registry = dr.async_get(self.hass)
+        device = registry.async_get_device(
+            identifiers={(DOMAIN, self.entry.entry_id)}
+        )
+        if device and device.sw_version != version:
+            registry.async_update_device(device.id, sw_version=version)
 
     def _on_disconnect(
         self,
